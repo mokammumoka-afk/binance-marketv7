@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+:root { color-scheme: dark; }
+html, body { height: 100%; }
+
+* { scrollbar-width: thin; scrollbar-color: #2A3441 #0E1218; }
+*::-webkit-scrollbar { width: 6px; height: 6px; }
+*::-webkit-scrollbar-track { background: #0E1218; }
+*::-webkit-scrollbar-thumb { background: #2A3441; border-radius: 4px; }
+
+[dir='rtl'] body { font-family: 'IBM Plex Sans Arabic', 'Inter', system-ui, sans-serif; }
+[dir='ltr'] body { font-family: 'Inter', 'IBM Plex Sans Arabic', system-ui, sans-serif; }
+
+/* Numbers, symbols and technical terms always render LTR even inside an RTL page */
+.mono-num {
+  font-variant-numeric: tabular-nums;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  direction: ltr;
+  unicode-bidi: isolate;
+  display: inline-block;
+}
+
+.card { background: #121722; border: 1px solid #1F2733; border-radius: 14px; }
+.status-dot { width: 7px; height: 7px; border-radius: 999px; display: inline-block; }
+
+.tap-row { -webkit-tap-highlight-color: transparent; }
+.safe-top { padding-top: env(safe-area-inset-top, 0px); }
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
