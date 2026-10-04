@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { useSymbolAnalysis } from '../../lib/hooks/useSymbolAnalysis';
 import SignalCard from '../../components/SignalCard';
 import Chart from '../../components/Chart';
+import FuturesPanel from '../../components/FuturesPanel';
 import { symbolService } from '../../lib/binance/symbols';
 import { useT } from '../../lib/i18n';
 
@@ -123,6 +124,13 @@ function AnalyzerInner() {
           ))}
           <Row label={t('trend')} value={t(signal.mtf.overallBias)} />
         </div>
+      )}
+
+      {signal && signal.direction && (
+        <section>
+          <h2 className="mb-2 text-xs uppercase tracking-wide text-base-400">{t('futures.heading')}</h2>
+          <FuturesPanel symbol={symbol} direction={signal.direction} entry={signal.price} stopLoss={signal.plan?.stopLoss} />
+        </section>
       )}
     </div>
   );

@@ -15,11 +15,13 @@ export default function SystemPage() {
   const supabase = useSupabaseStatus();
   const [serverTime, setServerTime] = useState(null);
   const [logs, setLogs] = useState([]);
+  const [cronStatus, setCronStatus] = useState(null);
 
   useEffect(() => {
     binanceRest.serverTime().then(setServerTime).catch(() => {});
     listSystemLogs(50).then(setLogs);
     applyRetention().catch(() => {});
+    fetch('/api/cron/status').then((r) => r.json()).then(setCronStatus).catch(() => {});
   }, []);
 
   const drift = serverTime ? serverTime - Date.now() : null;
@@ -65,6 +67,32 @@ export default function SystemPage() {
         )}
       </div>
 
+      <div className="card space-y-2 p-4 text-sm">
+        <div className="text-xs uppercase tracking-wide text-base-500">Background Alerts (works with the browser closed)</div>
+        {!cronStatus && <div className="text-xs text-base-400">…</div>}
+        {cronStatus && (
+          <>
+            <BoolRow label="CRON_SECRET set" ok={cronStatus.cronSecretConfigured} />
+            <BoolRow label="Single-tenant env fallback" ok={cronStatus.envFallbackConfigured} detail={cronStatus.envFallbackConfigured ? `${cronStatus.envFallbackSymbolCount} symbol(s)` : null} />
+            <BoolRow label="  ↳ Telegram (env fallback)" ok={cronStatus.envTelegramConfigured} />
+            <BoolRow label="Supabase multi-user mode" ok={cronStatus.supabaseMultiUserConfigured} />
+            <BoolRow label="Web Push (VAPID) configured" ok={cronStatus.webPushConfigured} />
+            {!cronStatus.cronSecretConfigured && (
+              <p className="text-[11px] leading-relaxed text-warn">
+                CRON_SECRET is not set — /api/cron/scan will reject every request except Vercel&apos;s own cron. Set it before wiring up
+                GitHub Actions or an external scheduler.
+              </p>
+            )}
+            <p className="text-[11px] leading-relaxed text-base-500">
+              Something OUTSIDE your browser must call <code className="mono-num">/api/cron/scan</code> on a schedule for alerts to arrive
+              with no tab open: Vercel Cron (once/day on the free Hobby plan), the included free GitHub Actions workflow
+              (<code className="mono-num">.github/workflows/scan.yml</code>, every 5 min), or an external scheduler like cron-job.org. See
+              README &quot;Alerts that work with the browser closed&quot;.
+            </p>
+          </>
+        )}
+      </div>
+
       <div className="card p-4">
         <div className="mb-2 text-xs uppercase tracking-wide text-base-500">Stream Health</div>
         {wsStatus.streamHealth.length === 0 && <div className="text-xs text-base-400">—</div>}
@@ -99,6 +127,17 @@ function Row({ label, value }) {
     <div className="flex items-center justify-between">
       <span className="text-base-400">{label}</span>
       <span className="mono-num text-base-100">{value}</span>
+    </div>
+  );
+}
+
+function BoolRow({ label, ok, detail }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-base-400">{label}</span>
+      <span className={`mono-num ${ok ? 'text-long' : 'text-base-500'}`}>
+        {ok ? '✓' : '—'} {detail || ''}
+      </span>
     </div>
   );
 }

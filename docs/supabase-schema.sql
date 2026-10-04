@@ -75,6 +75,7 @@ create table if not exists signals (
   result text,
   suppressed_notification boolean default false,
   history jsonb default '[]'::jsonb,
+  notified_at timestamptz,
   updated_at timestamptz not null default now(),
   unique (user_id, fingerprint)
 );
@@ -174,6 +175,25 @@ create table if not exists user_settings (
 );
 alter table user_settings enable row level security;
 create policy "user_settings_owner" on user_settings for all
+  using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- ---------------------------------------------------------------------------
+-- push_subscriptions: Web Push endpoints (one browser/device per row).
+-- Written by the browser itself via /api/push/subscribe (RLS-scoped to the
+-- caller's own JWT), read by the cron job via the service-role key.
+-- ---------------------------------------------------------------------------
+create table if not exists push_subscriptions (
+  id bigserial primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  endpoint text not null,
+  p256dh text not null,
+  auth text not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (user_id, endpoint)
+);
+alter table push_subscriptions enable row level security;
+create policy "push_subscriptions_owner" on push_subscriptions for all
   using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
 -- ---------------------------------------------------------------------------

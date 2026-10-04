@@ -8,6 +8,9 @@ import { STRATEGY_VARIANTS } from '../../lib/signals/signalEngine';
 import { sendTelegramMessage } from '../../lib/notifications/notify';
 import { useEffect } from 'react';
 import { useT } from '../../lib/i18n';
+import { isSupabaseActive } from '../../lib/storage/db';
+import { pushSupported, getPushSubscriptionStatus, enablePushNotifications, disablePushNotifications, sendTestPush } from '../../lib/notifications/registerPush';
+import Link from 'next/link';
 
 export default function SettingsPage() {
   const { t } = useT();
@@ -18,6 +21,41 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false);
   const [telegramStatus, setTelegramStatus] = useState(null);
   const [permStatus, setPermStatus] = useState(typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unsupported');
+  const [pushStatus, setPushStatus] = useState({ supported: false, subscribed: false });
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushMessage, setPushMessage] = useState(null);
+
+  useEffect(() => {
+    getPushSubscriptionStatus().then(setPushStatus);
+  }, []);
+
+  async function togglePush() {
+    setPushBusy(true);
+    setPushMessage(null);
+    try {
+      if (pushStatus.subscribed) {
+        await disablePushNotifications();
+        setPushMessage({ ok: true, text: 'Push notifications disabled.' });
+      } else {
+        const res = await enablePushNotifications();
+        if (!res.ok) {
+          const MSG = {
+            UNSUPPORTED: 'This browser does not support Web Push.',
+            SUPABASE_REQUIRED: 'Supabase must be configured first — push subscriptions need a server-side place to live so the background scan can reach this device. See More → System Health.',
+            VAPID_NOT_CONFIGURED: 'NEXT_PUBLIC_VAPID_PUBLIC_KEY is not set — run `node scripts/generate-vapid-keys.mjs` and add the keys to your environment.',
+            PERMISSION_DENIED: 'Notification permission was denied in the browser.',
+            SERVER_REJECTED: 'The server rejected the subscription: ' + (res.detail || ''),
+          };
+          setPushMessage({ ok: false, text: MSG[res.reason] || res.reason });
+        } else {
+          setPushMessage({ ok: true, text: 'Push notifications enabled — try "Send Test Push" below.' });
+        }
+      }
+    } finally {
+      setPushStatus(await getPushSubscriptionStatus());
+      setPushBusy(false);
+    }
+  }
 
   useEffect(() => setLocal(config), [config]);
   useEffect(() => {
@@ -119,18 +157,74 @@ export default function SettingsPage() {
         <textarea value={watchlistInput} onChange={(e) => setWatchlistInput(e.target.value)} className="mono-num h-20 w-full rounded-lg border border-base-600 bg-base-800 px-3 py-2 text-sm focus:border-accent focus:outline-none" placeholder="BTCUSDT, ETHUSDT" />
       </Section>
 
-      <Section title="Notifications">
+      <Section title={t('alerts.heading')}>
+        <Check label="Enable Alerts" checked={local.alerts.enabled} onChange={(v) => update('alerts.enabled', v)} />
+        <Num label="Minimum Score for Alert" value={local.alerts.minScoreForAlert} onChange={(v) => update('alerts.minScoreForAlert', v)} />
+        <Check label="Require CONFIRMED state (not just CANDIDATE)" checked={local.alerts.requireConfirmedState} onChange={(v) => update('alerts.requireConfirmedState', v)} />
+        <p className="text-[11px] leading-relaxed text-base-500">
+          This Score is a confluence read, not a win-rate guarantee. Before trusting the threshold above, go to{' '}
+          <Link href="/backtest" className="text-accent underline">Backtest → Score Range Analysis</Link> and check what this exact config&apos;s historical win rate actually was at that score level, on the symbols you care about.
+        </p>
+      </Section>
+
+      <Section title="Notifications — While the App Is Open">
         <Check label="Browser Notifications" checked={local.notifications.browserEnabled} onChange={(v) => update('notifications.browserEnabled', v)} />
         <button onClick={askPermission} className="rounded-lg border border-base-600 px-3 py-1.5 text-xs text-base-300">
           Permission: {permStatus}
         </button>
-        <Check label="Telegram" checked={local.notifications.telegramEnabled} onChange={(v) => update('notifications.telegramEnabled', v)} />
-        <Text label="Bot Token" value={local.notifications.telegramBotToken} onChange={(v) => update('notifications.telegramBotToken', v)} />
-        <Text label="Chat ID" value={local.notifications.telegramChatId} onChange={(v) => update('notifications.telegramChatId', v)} />
-        <button onClick={testTelegram} className="rounded-lg bg-accent-dim px-3 py-1.5 text-xs text-accent">Send Test Message</button>
-        {telegramStatus && <div className="text-xs text-base-400">{telegramStatus}</div>}
-        <Check label="Webhook" checked={local.notifications.webhookEnabled} onChange={(v) => update('notifications.webhookEnabled', v)} />
-        <Text label="Webhook URL" value={local.notifications.webhookUrl} onChange={(v) => update('notifications.webhookUrl', v)} />
+      </Section>
+
+      <Section title="Notifications — Even With the Browser Closed">
+        <p className="text-[11px] leading-relaxed text-base-500">
+          These three channels are sent by the server-side background scan (<code className="mono-num">/api/cron/scan</code>), not by this
+          tab — they work whether or not anyone has the app open. Something outside your browser must trigger that scan on a schedule; see{' '}
+          <Link href="/system" className="text-accent underline">System Health</Link> and the README for the free options (GitHub Actions,
+          cron-job.org) and the Vercel Hobby-plan limit (once/day).
+        </p>
+
+        <div className="border-t border-base-700 pt-2.5">
+          <div className="mb-1 flex items-center justify-between">
+            <span className="text-sm text-base-300">Push Notifications (native)</span>
+            {pushStatus.subscribed && <span className="text-[10px] text-long">ENABLED</span>}
+          </div>
+          <button
+            onClick={togglePush}
+            disabled={pushBusy || !pushSupported()}
+            className="rounded-lg bg-accent-dim px-3 py-1.5 text-xs text-accent disabled:opacity-40"
+          >
+            {pushBusy ? '…' : pushStatus.subscribed ? 'Disable Push' : 'Enable Push Notifications'}
+          </button>
+          {pushStatus.subscribed && (
+            <button
+              onClick={async () => setPushMessage(await sendTestPush().then((r) => ({ ok: r.ok, text: r.ok ? 'Test push sent — check your notifications.' : r.reason })))}
+              className="ms-2 rounded-lg border border-base-600 px-3 py-1.5 text-xs text-base-300"
+            >
+              Send Test Push
+            </button>
+          )}
+          {!pushSupported() && <div className="mt-1 text-[11px] text-base-500">Not supported in this browser.</div>}
+          {pushMessage && <div className={`mt-1 text-[11px] ${pushMessage.ok ? 'text-base-400' : 'text-warn'}`}>{pushMessage.text}</div>}
+          {!isSupabaseActive && (
+            <div className="mt-1 text-[11px] text-warn">Requires Supabase (see More → System Health) — push subscriptions need a server-side home.</div>
+          )}
+        </div>
+
+        <div className="border-t border-base-700 pt-2.5">
+          <Check label="Telegram" checked={local.notifications.telegramEnabled} onChange={(v) => update('notifications.telegramEnabled', v)} />
+          <Text label="Bot Token" value={local.notifications.telegramBotToken} onChange={(v) => update('notifications.telegramBotToken', v)} />
+          <Text label="Chat ID" value={local.notifications.telegramChatId} onChange={(v) => update('notifications.telegramChatId', v)} />
+          <button onClick={testTelegram} className="mt-2 rounded-lg bg-accent-dim px-3 py-1.5 text-xs text-accent">Send Test Message</button>
+          {telegramStatus && <div className="text-xs text-base-400">{telegramStatus}</div>}
+          <p className="mt-1 text-[11px] text-base-500">
+            For the closed-browser path, the cron job reads this Bot Token/Chat ID from your saved settings (Supabase) — or, with zero
+            Supabase setup, from the CRON_TELEGRAM_BOT_TOKEN / CRON_TELEGRAM_CHAT_ID environment variables instead (see .env.example).
+          </p>
+        </div>
+
+        <div className="border-t border-base-700 pt-2.5">
+          <Check label="Webhook" checked={local.notifications.webhookEnabled} onChange={(v) => update('notifications.webhookEnabled', v)} />
+          <Text label="Webhook URL" value={local.notifications.webhookUrl} onChange={(v) => update('notifications.webhookUrl', v)} />
+        </div>
       </Section>
 
       <button onClick={onSave} className="w-full rounded-lg bg-long-dim py-3 text-sm font-medium text-long-bright">
