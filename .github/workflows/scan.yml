@@ -1,0 +1,44 @@
+name: Market Intelligence — background alert scan
+
+# Free alternative to Vercel's Hobby-plan once-per-day cron limit: GitHub
+# Actions scheduled workflows are free (public repos; generous free minutes
+# on private ones) and can run every 5 minutes. This workflow does no
+# analysis itself — it just pings your already-deployed /api/cron/scan
+# route, which does the real work server-side. Works even if every browser
+# that ever opened the app is closed.
+#
+# Setup:
+#   1. Repo → Settings → Secrets and variables → Actions → New repository secret
+#        APP_URL      = https://your-app.vercel.app
+#        CRON_SECRET  = the same value you set as CRON_SECRET on Vercel
+#   2. Push this file — GitHub picks up the schedule automatically.
+#   3. Actions tab → this workflow → "Run workflow" to trigger one manually
+#      and confirm it reaches your deployment before trusting the schedule.
+#
+# GitHub's own scheduled-workflow minimum is 5 minutes, and schedules are
+# "best effort" (can run a few minutes late, especially on the free tier) —
+# fine for this use case, not fine if you need exact-second timing.
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch: {}
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call the alert scan endpoint
+        run: |
+          if [ -z "${{ secrets.APP_URL }}" ] || [ -z "${{ secrets.CRON_SECRET }}" ]; then
+            echo "Set the APP_URL and CRON_SECRET repository secrets first (see comments in this file)."
+            exit 1
+          fi
+          status=$(curl -s -o response.json -w "%{http_code}" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
+            "${{ secrets.APP_URL }}/api/cron/scan")
+          echo "HTTP $status"
+          cat response.json
+          if [ "$status" -ge 300 ]; then
+            exit 1
+          fi
